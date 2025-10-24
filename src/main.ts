@@ -22,8 +22,12 @@ document.body.appendChild(canvasRow);
 //Drawing with Mouse (store strokes and use an event to trigger redraw)
 type Point = { x: number; y: number };
 const strokes: Point[][] = [];
+const redoStack: Point[][] = [];
 
-const ctx = canvas.getContext("2d")!;
+const ctx = canvas.getContext("2d");
+if (!ctx) {
+  throw new Error("2D rendering context not available");
+}
 const cursor = { active: false, x: 0, y: 0 };
 
 // Redraw observer: clears canvas and redraws all strokes
@@ -48,6 +52,8 @@ canvas.addEventListener("mousedown", (e) => {
   cursor.active = true;
   const pt: Point = { x: e.offsetX, y: e.offsetY };
   strokes.push([pt]);
+  // starting a new stroke invalidates the redo stack
+  redoStack.length = 0;
   cursor.x = pt.x;
   cursor.y = pt.y;
   canvas.dispatchEvent(new Event("drawing-changed"));
@@ -78,7 +84,38 @@ clearButton.textContent = "Clear";
 // Add the clear button next to the canvas inside the same row
 canvasRow.appendChild(clearButton);
 
+const undoButton = document.createElement("button");
+undoButton.type = "button";
+undoButton.className = "undo-button";
+undoButton.textContent = "Undo";
+canvasRow.appendChild(undoButton);
+
+const redoButton = document.createElement("button");
+redoButton.type = "button";
+redoButton.className = "redo-button";
+redoButton.textContent = "Redo";
+canvasRow.appendChild(redoButton);
+
 clearButton.addEventListener("click", () => {
   strokes.length = 0;
+  redoStack.length = 0;
   canvas.dispatchEvent(new Event("drawing-changed"));
+});
+
+undoButton.addEventListener("click", () => {
+  if (strokes.length === 0) return;
+  const popped = strokes.pop();
+  if (popped) {
+    redoStack.push(popped);
+    canvas.dispatchEvent(new Event("drawing-changed"));
+  }
+});
+
+redoButton.addEventListener("click", () => {
+  if (redoStack.length === 0) return;
+  const restored = redoStack.pop();
+  if (restored) {
+    strokes.push(restored);
+    canvas.dispatchEvent(new Event("drawing-changed"));
+  }
 });
