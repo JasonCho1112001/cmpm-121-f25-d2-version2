@@ -6,9 +6,33 @@
 
 .app-canvas {
   display: block;
-  margin: 20px auto;
+  /* remove auto centering because parent .canvas-row will center the group */
+  margin: 0;
   border: 1px solid black;
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   background-color: white;
+}
+
+/* row that holds the canvas and the control(s) beside it */
+.canvas-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: center; /* center the whole group */
+  margin-top: 20px;
+}
+
+.clear-button {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid #bbb;
+  background: #f6f6f6;
+  cursor: pointer;
+  height: fit-content;
+}
+
+.clear-button:hover {
+  background: #eee;
 }
