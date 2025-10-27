@@ -54,9 +54,44 @@ class MarkerLine implements DisplayCommand {
   }
 }
 
+// Tool preview abstraction
+interface ToolPreview {
+  draw(ctx: CanvasRenderingContext2D): void;
+}
+
+class CirclePreview implements ToolPreview {
+  x: number;
+  y: number;
+  thickness: number;
+
+  constructor(x: number, y: number, thickness: number) {
+    this.x = x;
+    this.y = y;
+    this.thickness = thickness;
+  }
+
+  draw(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    // semi-transparent preview
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.fillStyle = "rgba(0,0,0,0.08)";
+    // radius roughly half the marker thickness
+    const radius = Math.max(1, this.thickness / 2);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 // display list and redo stack now hold command objects
 const strokes: MarkerLine[] = [];
 const redoStack: MarkerLine[] = [];
+
+// current preview (null when none)
+let currentPreview: ToolPreview | null = null;
 
 const ctx = canvas.getContext("2d");
 if (!ctx) {
@@ -87,8 +122,8 @@ toolsRow.appendChild(thickButton);
 
 // Simple visual feedback for selected tool
 function updateToolSelection() {
-  thinButton.classList.toggle("selectedTool", currentThickness === 2);
-  thickButton.classList.toggle("selectedTool", currentThickness === 8);
+  thinButton.classList.toggle("selectedTool", currentThickness === 6);
+  thickButton.classList.toggle("selectedTool", currentThickness === 12);
 }
 thinButton.addEventListener("click", () => {
   currentThickness = 2;
@@ -101,7 +136,7 @@ thickButton.addEventListener("click", () => {
 // initialize selection
 updateToolSelection();
 
-// Redraw observer: clears canvas and redraws all commands
+// Redraw observer: clears canvas and redraws all commands + preview when appropriate
 canvas.addEventListener("drawing-changed", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -112,11 +147,24 @@ canvas.addEventListener("drawing-changed", () => {
   for (const cmd of strokes) {
     cmd.display(ctx);
   }
+
+  // draw the tool preview only when the user is not drawing
+  if (!cursor.active && currentPreview) {
+    currentPreview.draw(ctx);
+  }
+});
+
+// when the tool moves, we want to redraw (tool-moved triggers a drawing update)
+canvas.addEventListener("tool-moved", () => {
+  // reuse the same redraw logic
+  canvas.dispatchEvent(new Event("drawing-changed"));
 });
 
 // Mouse handlers push command objects into the display list and dispatch changes
 canvas.addEventListener("mousedown", (e) => {
   cursor.active = true;
+  // hide preview when starting a stroke
+  currentPreview = null;
   const pt: Point = { x: e.offsetX, y: e.offsetY };
   const line = new MarkerLine(pt, currentThickness);
   strokes.push(line);
@@ -128,21 +176,38 @@ canvas.addEventListener("mousedown", (e) => {
 });
 
 canvas.addEventListener("mousemove", (e) => {
-  if (!cursor.active) return;
   const x = e.offsetX;
   const y = e.offsetY;
-  const current = strokes[strokes.length - 1];
-  if (current) {
-    current.drag(x, y);
-    cursor.x = x;
-    cursor.y = y;
-    canvas.dispatchEvent(new Event("drawing-changed"));
+
+  if (cursor.active) {
+    const current = strokes[strokes.length - 1];
+    if (current) {
+      current.drag(x, y);
+      cursor.x = x;
+      cursor.y = y;
+      canvas.dispatchEvent(new Event("drawing-changed"));
+    }
+    return;
   }
+
+  // not drawing: update tool preview and notify listeners
+  currentPreview = new CirclePreview(x, y, currentThickness);
+  cursor.x = x;
+  cursor.y = y;
+  canvas.dispatchEvent(new Event("tool-moved"));
 });
 
 canvas.addEventListener("mouseup", (_e) => {
   cursor.active = false;
+  // show a preview at the last cursor position immediately after finishing a stroke
+  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
   canvas.dispatchEvent(new Event("drawing-changed"));
+});
+
+canvas.addEventListener("mouseleave", () => {
+  // clear preview when leaving canvas
+  currentPreview = null;
+  canvas.dispatchEvent(new Event("tool-moved"));
 });
 
 const clearButton = document.createElement("button");
