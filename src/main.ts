@@ -28,9 +28,11 @@ interface DisplayCommand {
 
 class MarkerLine implements DisplayCommand {
   points: Point[];
+  thickness: number;
 
-  constructor(start: Point) {
+  constructor(start: Point, thickness = 2) {
     this.points = [start];
+    this.thickness = thickness;
   }
 
   // called while dragging to extend the line
@@ -40,12 +42,15 @@ class MarkerLine implements DisplayCommand {
 
   display(ctx: CanvasRenderingContext2D) {
     if (this.points.length === 0) return;
+    ctx.save();
+    ctx.lineWidth = this.thickness;
     ctx.beginPath();
     ctx.moveTo(this.points[0].x, this.points[0].y);
     for (let i = 1; i < this.points.length; i++) {
       ctx.lineTo(this.points[i].x, this.points[i].y);
     }
     ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -59,14 +64,49 @@ if (!ctx) {
 }
 const cursor = { active: false, x: 0, y: 0 };
 
+// Track current tool (thickness). Default to thin (2).
+let currentThickness = 2;
+
+// Tool buttons
+const toolsRow = document.createElement("div");
+toolsRow.className = "tools-row";
+canvasRow.appendChild(toolsRow);
+
+const thinButton = document.createElement("button");
+thinButton.type = "button";
+thinButton.className = "tool-button";
+thinButton.textContent = "Thin";
+
+const thickButton = document.createElement("button");
+thickButton.type = "button";
+thickButton.className = "tool-button";
+thickButton.textContent = "Thick";
+
+toolsRow.appendChild(thinButton);
+toolsRow.appendChild(thickButton);
+
+// Simple visual feedback for selected tool
+function updateToolSelection() {
+  thinButton.classList.toggle("selectedTool", currentThickness === 2);
+  thickButton.classList.toggle("selectedTool", currentThickness === 8);
+}
+thinButton.addEventListener("click", () => {
+  currentThickness = 2;
+  updateToolSelection();
+});
+thickButton.addEventListener("click", () => {
+  currentThickness = 6;
+  updateToolSelection();
+});
+// initialize selection
+updateToolSelection();
+
 // Redraw observer: clears canvas and redraws all commands
 canvas.addEventListener("drawing-changed", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  // set any desired stroke style/width here
-  ctx.lineWidth = 2;
   ctx.strokeStyle = "#000";
 
   for (const cmd of strokes) {
@@ -78,7 +118,7 @@ canvas.addEventListener("drawing-changed", () => {
 canvas.addEventListener("mousedown", (e) => {
   cursor.active = true;
   const pt: Point = { x: e.offsetX, y: e.offsetY };
-  const line = new MarkerLine(pt);
+  const line = new MarkerLine(pt, currentThickness);
   strokes.push(line);
   // starting a new stroke invalidates the redo stack
   redoStack.length = 0;
