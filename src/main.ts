@@ -19,10 +19,39 @@ canvasRow.className = "canvas-row";
 canvasRow.appendChild(canvas);
 document.body.appendChild(canvasRow);
 
-//Drawing with Mouse (store strokes and use an event to trigger redraw)
+// Drawing command abstraction
 type Point = { x: number; y: number };
-const strokes: Point[][] = [];
-const redoStack: Point[][] = [];
+
+interface DisplayCommand {
+  display(ctx: CanvasRenderingContext2D): void;
+}
+
+class MarkerLine implements DisplayCommand {
+  points: Point[];
+
+  constructor(start: Point) {
+    this.points = [start];
+  }
+
+  // called while dragging to extend the line
+  drag(x: number, y: number) {
+    this.points.push({ x, y });
+  }
+
+  display(ctx: CanvasRenderingContext2D) {
+    if (this.points.length === 0) return;
+    ctx.beginPath();
+    ctx.moveTo(this.points[0].x, this.points[0].y);
+    for (let i = 1; i < this.points.length; i++) {
+      ctx.lineTo(this.points[i].x, this.points[i].y);
+    }
+    ctx.stroke();
+  }
+}
+
+// display list and redo stack now hold command objects
+const strokes: MarkerLine[] = [];
+const redoStack: MarkerLine[] = [];
 
 const ctx = canvas.getContext("2d");
 if (!ctx) {
@@ -30,28 +59,27 @@ if (!ctx) {
 }
 const cursor = { active: false, x: 0, y: 0 };
 
-// Redraw observer: clears canvas and redraws all strokes
+// Redraw observer: clears canvas and redraws all commands
 canvas.addEventListener("drawing-changed", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  for (const stroke of strokes) {
-    if (stroke.length === 0) continue;
-    ctx.beginPath();
-    ctx.moveTo(stroke[0].x, stroke[0].y);
-    for (let i = 1; i < stroke.length; i++) {
-      ctx.lineTo(stroke[i].x, stroke[i].y);
-    }
-    ctx.stroke();
+  // set any desired stroke style/width here
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#000";
+
+  for (const cmd of strokes) {
+    cmd.display(ctx);
   }
 });
 
-// Mouse handlers push points into the current stroke and dispatch changes
+// Mouse handlers push command objects into the display list and dispatch changes
 canvas.addEventListener("mousedown", (e) => {
   cursor.active = true;
   const pt: Point = { x: e.offsetX, y: e.offsetY };
-  strokes.push([pt]);
+  const line = new MarkerLine(pt);
+  strokes.push(line);
   // starting a new stroke invalidates the redo stack
   redoStack.length = 0;
   cursor.x = pt.x;
@@ -61,19 +89,19 @@ canvas.addEventListener("mousedown", (e) => {
 
 canvas.addEventListener("mousemove", (e) => {
   if (!cursor.active) return;
-  const pt: Point = { x: e.offsetX, y: e.offsetY };
+  const x = e.offsetX;
+  const y = e.offsetY;
   const current = strokes[strokes.length - 1];
   if (current) {
-    current.push(pt);
-    cursor.x = pt.x;
-    cursor.y = pt.y;
+    current.drag(x, y);
+    cursor.x = x;
+    cursor.y = y;
     canvas.dispatchEvent(new Event("drawing-changed"));
   }
 });
 
 canvas.addEventListener("mouseup", (_e) => {
   cursor.active = false;
-  // Optionally dispatch to ensure final state is drawn
   canvas.dispatchEvent(new Event("drawing-changed"));
 });
 
