@@ -24,6 +24,8 @@ type Point = { x: number; y: number };
 
 interface DisplayCommand {
   display(ctx: CanvasRenderingContext2D): void;
+  // optional drag method for interactive repositioning
+  drag?(x: number, y: number): void;
 }
 
 class MarkerLine implements DisplayCommand {
@@ -75,8 +77,8 @@ class CirclePreview implements ToolPreview {
     // semi-transparent preview
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.fillStyle = "rgba(0,0,0,0.08)";
-    // radius roughly half the marker thickness
-    const radius = Math.max(1, this.thickness / 2);
+    // radius roughly half the marker thickness (scaled for visibility)
+    const radius = Math.max(2, this.thickness);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
@@ -86,9 +88,64 @@ class CirclePreview implements ToolPreview {
   }
 }
 
-// display list and redo stack now hold command objects
-const strokes: MarkerLine[] = [];
-const redoStack: MarkerLine[] = [];
+// Sticker preview and command
+class StickerPreview implements ToolPreview {
+  x: number;
+  y: number;
+  emoji: string;
+  size: number;
+
+  constructor(x: number, y: number, emoji: string, size = 32) {
+    this.x = x;
+    this.y = y;
+    this.emoji = emoji;
+    this.size = size;
+  }
+
+  draw(ctx: CanvasRenderingContext2D) {
+    if (!this.emoji) return;
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${this.size}px serif`;
+    ctx.fillText(this.emoji, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+class StickerCommand implements DisplayCommand {
+  x: number;
+  y: number;
+  emoji: string;
+  size: number;
+
+  constructor(start: Point, emoji: string, size = 32) {
+    this.x = start.x;
+    this.y = start.y;
+    this.emoji = emoji;
+    this.size = size;
+  }
+
+  // reposition the sticker while dragging
+  drag(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
+
+  display(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${this.size}px serif`;
+    ctx.fillText(this.emoji, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+// display list and redo stack now hold command objects (any DisplayCommand)
+const strokes: DisplayCommand[] = [];
+const redoStack: DisplayCommand[] = [];
 
 // current preview (null when none)
 let currentPreview: ToolPreview | null = null;
@@ -99,8 +156,13 @@ if (!ctx) {
 }
 const cursor = { active: false, x: 0, y: 0 };
 
-// Track current tool (thickness). Default to thin (2).
+// Tools state
+type ToolKind = "marker" | "sticker";
+let currentTool: ToolKind = "marker";
+// Marker thickness when using marker tool
 let currentThickness = 2;
+// Selected sticker emoji when using sticker tool
+let selectedSticker: string | null = null;
 
 // Tool buttons
 const toolsRow = document.createElement("div");
@@ -120,18 +182,89 @@ thickButton.textContent = "Thick";
 toolsRow.appendChild(thinButton);
 toolsRow.appendChild(thickButton);
 
+// Sticker buttons (🍙🥟🍜)
+const onigiriButton = document.createElement("button");
+onigiriButton.type = "button";
+onigiriButton.className = "tool-button sticker-button";
+onigiriButton.textContent = "🍙";
+
+const gyozaButton = document.createElement("button");
+gyozaButton.type = "button";
+gyozaButton.className = "tool-button sticker-button";
+gyozaButton.textContent = "🥟";
+
+const ramenButton = document.createElement("button");
+ramenButton.type = "button";
+ramenButton.className = "tool-button sticker-button";
+ramenButton.textContent = "🍜";
+
+toolsRow.appendChild(onigiriButton);
+toolsRow.appendChild(gyozaButton);
+toolsRow.appendChild(ramenButton);
+
 // Simple visual feedback for selected tool
 function updateToolSelection() {
-  thinButton.classList.toggle("selectedTool", currentThickness === 6);
-  thickButton.classList.toggle("selectedTool", currentThickness === 12);
+  thinButton.classList.toggle(
+    "selectedTool",
+    currentTool === "marker" && currentThickness === 2,
+  );
+  thickButton.classList.toggle(
+    "selectedTool",
+    currentTool === "marker" && currentThickness === 6,
+  );
+
+  onigiriButton.classList.toggle(
+    "selectedTool",
+    currentTool === "sticker" && selectedSticker === "🍙",
+  );
+  gyozaButton.classList.toggle(
+    "selectedTool",
+    currentTool === "sticker" && selectedSticker === "🥟",
+  );
+  ramenButton.classList.toggle(
+    "selectedTool",
+    currentTool === "sticker" && selectedSticker === "🍜",
+  );
 }
 thinButton.addEventListener("click", () => {
+  currentTool = "marker";
   currentThickness = 2;
+  selectedSticker = null;
+  // show preview for marker at last cursor position
+  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
   updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
 });
 thickButton.addEventListener("click", () => {
+  currentTool = "marker";
   currentThickness = 6;
+  selectedSticker = null;
+  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
   updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
+});
+
+onigiriButton.addEventListener("click", () => {
+  currentTool = "sticker";
+  selectedSticker = "🍙";
+  // prepare a sticker preview at current cursor
+  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
+  updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
+});
+gyozaButton.addEventListener("click", () => {
+  currentTool = "sticker";
+  selectedSticker = "🥟";
+  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
+  updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
+});
+ramenButton.addEventListener("click", () => {
+  currentTool = "sticker";
+  selectedSticker = "🍜";
+  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
+  updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
 });
 // initialize selection
 updateToolSelection();
@@ -163,12 +296,20 @@ canvas.addEventListener("tool-moved", () => {
 // Mouse handlers push command objects into the display list and dispatch changes
 canvas.addEventListener("mousedown", (e) => {
   cursor.active = true;
-  // hide preview when starting a stroke
+  // hide preview while interacting
   currentPreview = null;
+
   const pt: Point = { x: e.offsetX, y: e.offsetY };
-  const line = new MarkerLine(pt, currentThickness);
-  strokes.push(line);
-  // starting a new stroke invalidates the redo stack
+
+  if (currentTool === "marker") {
+    const line = new MarkerLine(pt, currentThickness);
+    strokes.push(line);
+  } else if (currentTool === "sticker" && selectedSticker) {
+    const sticker = new StickerCommand(pt, selectedSticker, 36);
+    strokes.push(sticker);
+  }
+
+  // starting a new command invalidates the redo stack
   redoStack.length = 0;
   cursor.x = pt.x;
   cursor.y = pt.y;
@@ -181,7 +322,7 @@ canvas.addEventListener("mousemove", (e) => {
 
   if (cursor.active) {
     const current = strokes[strokes.length - 1];
-    if (current) {
+    if (current && typeof current.drag === "function") {
       current.drag(x, y);
       cursor.x = x;
       cursor.y = y;
@@ -191,16 +332,35 @@ canvas.addEventListener("mousemove", (e) => {
   }
 
   // not drawing: update tool preview and notify listeners
-  currentPreview = new CirclePreview(x, y, currentThickness);
   cursor.x = x;
   cursor.y = y;
+
+  if (currentTool === "marker") {
+    currentPreview = new CirclePreview(x, y, currentThickness);
+  } else if (currentTool === "sticker" && selectedSticker) {
+    currentPreview = new StickerPreview(x, y, selectedSticker, 36);
+  } else {
+    currentPreview = null;
+  }
+
   canvas.dispatchEvent(new Event("tool-moved"));
 });
 
 canvas.addEventListener("mouseup", (_e) => {
   cursor.active = false;
   // show a preview at the last cursor position immediately after finishing a stroke
-  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
+  if (currentTool === "marker") {
+    currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
+  } else if (currentTool === "sticker" && selectedSticker) {
+    currentPreview = new StickerPreview(
+      cursor.x,
+      cursor.y,
+      selectedSticker,
+      36,
+    );
+  } else {
+    currentPreview = null;
+  }
   canvas.dispatchEvent(new Event("drawing-changed"));
 });
 
