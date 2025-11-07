@@ -182,25 +182,67 @@ thickButton.textContent = "Thick";
 toolsRow.appendChild(thinButton);
 toolsRow.appendChild(thickButton);
 
-// Sticker buttons (🍙🥟🍜)
-const onigiriButton = document.createElement("button");
-onigiriButton.type = "button";
-onigiriButton.className = "tool-button sticker-button";
-onigiriButton.textContent = "🍙";
+// Sticker list (data-driven)
+const stickers: string[] = ["🍙", "🥟", "🍜"];
 
-const gyozaButton = document.createElement("button");
-gyozaButton.type = "button";
-gyozaButton.className = "tool-button sticker-button";
-gyozaButton.textContent = "🥟";
+// container for sticker buttons
+const stickerContainer = document.createElement("div");
+stickerContainer.className = "sticker-container";
+toolsRow.appendChild(stickerContainer);
 
-const ramenButton = document.createElement("button");
-ramenButton.type = "button";
-ramenButton.className = "tool-button sticker-button";
-ramenButton.textContent = "🍜";
+// Custom sticker button
+const customButton = document.createElement("button");
+customButton.type = "button";
+customButton.className = "tool-button custom-button";
+customButton.textContent = "Custom…";
+toolsRow.appendChild(customButton);
 
-toolsRow.appendChild(onigiriButton);
-toolsRow.appendChild(gyozaButton);
-toolsRow.appendChild(ramenButton);
+// Render sticker buttons from the stickers array
+function renderStickerButtons() {
+  // clear existing buttons
+  stickerContainer.innerHTML = "";
+  for (const emoji of stickers) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tool-button sticker-button";
+    b.textContent = emoji;
+    b.dataset.emoji = emoji;
+    b.addEventListener("click", () => {
+      currentTool = "sticker";
+      selectedSticker = emoji;
+      currentPreview = new StickerPreview(
+        cursor.x,
+        cursor.y,
+        selectedSticker,
+        36,
+      );
+      updateToolSelection();
+      canvas.dispatchEvent(new Event("tool-moved"));
+    });
+    stickerContainer.appendChild(b);
+  }
+}
+
+customButton.addEventListener("click", () => {
+  // ask user for custom sticker (emoji or text)
+  const text = prompt("Custom sticker text", "🧽");
+  if (text && text.trim() !== "") {
+    // add to stickers list and re-render buttons
+    stickers.push(text);
+    renderStickerButtons();
+    // select the newly created sticker
+    currentTool = "sticker";
+    selectedSticker = text;
+    currentPreview = new StickerPreview(
+      cursor.x,
+      cursor.y,
+      selectedSticker,
+      36,
+    );
+    updateToolSelection();
+    canvas.dispatchEvent(new Event("tool-moved"));
+  }
+});
 
 // Simple visual feedback for selected tool
 function updateToolSelection() {
@@ -208,66 +250,46 @@ function updateToolSelection() {
     "selectedTool",
     currentTool === "marker" && currentThickness === 2,
   );
+  // thick brush is now twice as thick (4)
   thickButton.classList.toggle(
     "selectedTool",
-    currentTool === "marker" && currentThickness === 6,
+    currentTool === "marker" && currentThickness === 4,
   );
 
-  onigiriButton.classList.toggle(
-    "selectedTool",
-    currentTool === "sticker" && selectedSticker === "🍙",
+  // toggle sticker buttons
+  const nodes = stickerContainer.querySelectorAll<HTMLButtonElement>(
+    ".sticker-button",
   );
-  gyozaButton.classList.toggle(
-    "selectedTool",
-    currentTool === "sticker" && selectedSticker === "🥟",
-  );
-  ramenButton.classList.toggle(
-    "selectedTool",
-    currentTool === "sticker" && selectedSticker === "🍜",
-  );
+  nodes.forEach((btn) => {
+    btn.classList.toggle(
+      "selectedTool",
+      currentTool === "sticker" && btn.dataset.emoji === selectedSticker,
+    );
+  });
+
+  // custom button isn't a sticker itself, keep it unselected
 }
+renderStickerButtons();
+
+// ensure thin/thick buttons restore the marker tool and set thickness
 thinButton.addEventListener("click", () => {
   currentTool = "marker";
   currentThickness = 2;
   selectedSticker = null;
-  // show preview for marker at last cursor position
-  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
-  updateToolSelection();
-  canvas.dispatchEvent(new Event("tool-moved"));
-});
-thickButton.addEventListener("click", () => {
-  currentTool = "marker";
-  currentThickness = 6;
-  selectedSticker = null;
   currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
   updateToolSelection();
   canvas.dispatchEvent(new Event("tool-moved"));
 });
 
-onigiriButton.addEventListener("click", () => {
-  currentTool = "sticker";
-  selectedSticker = "🍙";
-  // prepare a sticker preview at current cursor
-  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
+thickButton.addEventListener("click", () => {
+  currentTool = "marker";
+  // make thick brush exactly twice the thin brush
+  currentThickness = 4;
+  selectedSticker = null;
+  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
   updateToolSelection();
   canvas.dispatchEvent(new Event("tool-moved"));
 });
-gyozaButton.addEventListener("click", () => {
-  currentTool = "sticker";
-  selectedSticker = "🥟";
-  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
-  updateToolSelection();
-  canvas.dispatchEvent(new Event("tool-moved"));
-});
-ramenButton.addEventListener("click", () => {
-  currentTool = "sticker";
-  selectedSticker = "🍜";
-  currentPreview = new StickerPreview(cursor.x, cursor.y, selectedSticker, 36);
-  updateToolSelection();
-  canvas.dispatchEvent(new Event("tool-moved"));
-});
-// initialize selection
-updateToolSelection();
 
 // Redraw observer: clears canvas and redraws all commands + preview when appropriate
 canvas.addEventListener("drawing-changed", () => {
