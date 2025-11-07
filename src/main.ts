@@ -31,10 +31,12 @@ interface DisplayCommand {
 class MarkerLine implements DisplayCommand {
   points: Point[];
   thickness: number;
+  color: string;
 
-  constructor(start: Point, thickness = 2) {
+  constructor(start: Point, thickness = 2, color = "#000") {
     this.points = [start];
     this.thickness = thickness;
+    this.color = color;
   }
 
   // called while dragging to extend the line
@@ -46,6 +48,7 @@ class MarkerLine implements DisplayCommand {
     if (this.points.length === 0) return;
     ctx.save();
     ctx.lineWidth = this.thickness;
+    ctx.strokeStyle = this.color;
     ctx.beginPath();
     ctx.moveTo(this.points[0].x, this.points[0].y);
     for (let i = 1; i < this.points.length; i++) {
@@ -65,24 +68,31 @@ class CirclePreview implements ToolPreview {
   x: number;
   y: number;
   thickness: number;
+  color: string;
 
-  constructor(x: number, y: number, thickness: number) {
+  constructor(x: number, y: number, thickness: number, color = "#000") {
     this.x = x;
     this.y = y;
     this.thickness = thickness;
+    this.color = color;
   }
 
   draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    // semi-transparent preview
-    ctx.strokeStyle = "rgba(0,0,0,0.6)";
-    ctx.fillStyle = "rgba(0,0,0,0.08)";
-    // radius roughly half the marker thickness (scaled for visibility)
+    // draw a filled faint circle then colored stroke
     const radius = Math.max(2, this.thickness);
-    ctx.lineWidth = 1;
+    // faint fill
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = this.color;
     ctx.beginPath();
     ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
     ctx.fill();
+    // stroke
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -94,22 +104,27 @@ class StickerPreview implements ToolPreview {
   y: number;
   emoji: string;
   size: number;
+  rotationDeg: number;
 
-  constructor(x: number, y: number, emoji: string, size = 32) {
+  constructor(x: number, y: number, emoji: string, size = 32, rotationDeg = 0) {
     this.x = x;
     this.y = y;
     this.emoji = emoji;
     this.size = size;
+    this.rotationDeg = rotationDeg;
   }
 
   draw(ctx: CanvasRenderingContext2D) {
     if (!this.emoji) return;
     ctx.save();
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = 0.85;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `${this.size}px serif`;
-    ctx.fillText(this.emoji, this.x, this.y);
+    // rotate about center
+    ctx.translate(this.x, this.y);
+    ctx.rotate((this.rotationDeg * Math.PI) / 180);
+    ctx.fillText(this.emoji, 0, 0);
     ctx.restore();
   }
 }
@@ -119,12 +134,14 @@ class StickerCommand implements DisplayCommand {
   y: number;
   emoji: string;
   size: number;
+  rotationDeg: number;
 
-  constructor(start: Point, emoji: string, size = 32) {
+  constructor(start: Point, emoji: string, size = 32, rotationDeg = 0) {
     this.x = start.x;
     this.y = start.y;
     this.emoji = emoji;
     this.size = size;
+    this.rotationDeg = rotationDeg;
   }
 
   // reposition the sticker while dragging
@@ -138,7 +155,9 @@ class StickerCommand implements DisplayCommand {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `${this.size}px serif`;
-    ctx.fillText(this.emoji, this.x, this.y);
+    ctx.translate(this.x, this.y);
+    ctx.rotate((this.rotationDeg * Math.PI) / 180);
+    ctx.fillText(this.emoji, 0, 0);
     ctx.restore();
   }
 }
@@ -163,6 +182,10 @@ let currentTool: ToolKind = "marker";
 let currentThickness = 2;
 // Selected sticker emoji when using sticker tool
 let selectedSticker: string | null = null;
+// Selected color for brushes
+let currentColor = "#000";
+// Selected rotation for stickers (degrees)
+let currentStickerRotation = 0;
 
 // --- Create all buttons first (declared before grouping) ---
 const thinButton = document.createElement("button");
@@ -175,8 +198,21 @@ thickButton.type = "button";
 thickButton.className = "tool-button";
 thickButton.textContent = "Thick";
 
+const colorsContainer = document.createElement("div");
+colorsContainer.className = "colors-container";
+
 const stickerContainer = document.createElement("div");
 stickerContainer.className = "sticker-container";
+
+const rotateLeftButton = document.createElement("button");
+rotateLeftButton.type = "button";
+rotateLeftButton.className = "tool-button";
+rotateLeftButton.textContent = "⟲ 15°";
+
+const rotateRightButton = document.createElement("button");
+rotateRightButton.type = "button";
+rotateRightButton.className = "tool-button";
+rotateRightButton.textContent = "15° ⟳";
 
 const customButton = document.createElement("button");
 customButton.type = "button";
@@ -206,6 +242,29 @@ exportButton.textContent = "Export (1024×1024)";
 // Sticker list (data-driven)
 const stickers: string[] = ["🍙", "🥟", "🍜"];
 
+// Color buttons (black, red, green, blue)
+const colors = [
+  { id: "black", value: "#000000" },
+  { id: "red", value: "#d63447" },
+  { id: "green", value: "#16a34a" },
+  { id: "blue", value: "#2563eb" },
+];
+
+// helper: pick random int
+function randInt(maxExclusive: number) {
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+// helper: randomize next-variation (color and sticker rotation)
+function randomizeVariation() {
+  // random color from the colors array
+  const c = colors[randInt(colors.length)];
+  currentColor = c.value;
+  // random sticker rotation snapped to 15° increments
+  const steps = 360 / 15; // 24
+  currentStickerRotation = (randInt(steps) * 15) % 360;
+}
+
 // Render sticker buttons from the stickers array
 function renderStickerButtons() {
   stickerContainer.innerHTML = "";
@@ -216,6 +275,7 @@ function renderStickerButtons() {
     b.textContent = emoji;
     b.dataset.emoji = emoji;
     b.addEventListener("click", () => {
+      // removed randomizeVariation() from here so variation happens on use, not on click
       currentTool = "sticker";
       selectedSticker = emoji;
       currentPreview = new StickerPreview(
@@ -223,6 +283,7 @@ function renderStickerButtons() {
         cursor.y,
         selectedSticker,
         36,
+        currentStickerRotation,
       );
       updateToolSelection();
       canvas.dispatchEvent(new Event("tool-moved"));
@@ -232,12 +293,40 @@ function renderStickerButtons() {
 }
 renderStickerButtons();
 
+function renderColorButtons() {
+  colorsContainer.innerHTML = "";
+  for (const c of colors) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tool-button color-button";
+    b.style.background = c.value;
+    b.dataset.color = c.value;
+    b.title = c.id;
+    b.addEventListener("click", () => {
+      currentTool = "marker";
+      currentColor = c.value;
+      selectedSticker = null;
+      currentPreview = new CirclePreview(
+        cursor.x,
+        cursor.y,
+        currentThickness,
+        currentColor,
+      );
+      updateToolSelection();
+      canvas.dispatchEvent(new Event("tool-moved"));
+    });
+    colorsContainer.appendChild(b);
+  }
+}
+renderColorButtons();
+
 // Custom sticker handler
 customButton.addEventListener("click", () => {
   const text = prompt("Custom sticker text", "🧽");
   if (text && text.trim() !== "") {
     stickers.push(text);
     renderStickerButtons();
+    // do NOT randomize here; variation will be chosen when the tool is actually used
     currentTool = "sticker";
     selectedSticker = text;
     currentPreview = new StickerPreview(
@@ -245,6 +334,7 @@ customButton.addEventListener("click", () => {
       cursor.y,
       selectedSticker,
       36,
+      currentStickerRotation,
     );
     updateToolSelection();
     canvas.dispatchEvent(new Event("tool-moved"));
@@ -253,20 +343,62 @@ customButton.addEventListener("click", () => {
 
 // ensure thin/thick buttons restore the marker tool and set thickness
 thinButton.addEventListener("click", () => {
+  // removed randomizeVariation() so randomization happens on use (mousedown)
   currentTool = "marker";
   currentThickness = 2;
   selectedSticker = null;
-  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
+  currentPreview = new CirclePreview(
+    cursor.x,
+    cursor.y,
+    currentThickness,
+    currentColor,
+  );
   updateToolSelection();
   canvas.dispatchEvent(new Event("tool-moved"));
 });
 
 thickButton.addEventListener("click", () => {
+  // removed randomizeVariation() so randomization happens on use (mousedown)
   currentTool = "marker";
   // make thick brush exactly twice the thin brush
   currentThickness = 4;
   selectedSticker = null;
-  currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
+  currentPreview = new CirclePreview(
+    cursor.x,
+    cursor.y,
+    currentThickness,
+    currentColor,
+  );
+  updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
+});
+
+// rotate buttons adjust the currentStickerRotation and update preview
+rotateLeftButton.addEventListener("click", () => {
+  currentStickerRotation = (currentStickerRotation - 15 + 360) % 360;
+  if (currentTool === "sticker" && selectedSticker) {
+    currentPreview = new StickerPreview(
+      cursor.x,
+      cursor.y,
+      selectedSticker,
+      36,
+      currentStickerRotation,
+    );
+  }
+  updateToolSelection();
+  canvas.dispatchEvent(new Event("tool-moved"));
+});
+rotateRightButton.addEventListener("click", () => {
+  currentStickerRotation = (currentStickerRotation + 15) % 360;
+  if (currentTool === "sticker" && selectedSticker) {
+    currentPreview = new StickerPreview(
+      cursor.x,
+      cursor.y,
+      selectedSticker,
+      36,
+      currentStickerRotation,
+    );
+  }
   updateToolSelection();
   canvas.dispatchEvent(new Event("tool-moved"));
 });
@@ -286,7 +418,12 @@ const brushesList = document.createElement("div");
 brushesList.className = "btn-list";
 brushesList.appendChild(thinButton);
 brushesList.appendChild(thickButton);
+// color swatches appear under brushes
+const colorWrapper = document.createElement("div");
+colorWrapper.className = "btn-list color-list";
+colorWrapper.appendChild(colorsContainer);
 brushesGroup.appendChild(brushesList);
+brushesGroup.appendChild(colorWrapper);
 controls.appendChild(brushesGroup);
 
 // Stickers group
@@ -299,6 +436,12 @@ const stickersList = document.createElement("div");
 stickersList.className = "btn-list sticker-list";
 stickersList.appendChild(stickerContainer);
 stickersGroup.appendChild(stickersList);
+// rotation controls for stickers
+const rotationWrapper = document.createElement("div");
+rotationWrapper.className = "btn-list rotation-list";
+rotationWrapper.appendChild(rotateLeftButton);
+rotationWrapper.appendChild(rotateRightButton);
+stickersGroup.appendChild(rotationWrapper);
 const customWrapper = document.createElement("div");
 customWrapper.className = "btn-list";
 customWrapper.appendChild(customButton);
@@ -339,6 +482,17 @@ function updateToolSelection() {
     currentTool === "marker" && currentThickness === 4,
   );
 
+  // color button selected state
+  const colorBtns = colorsContainer.querySelectorAll<HTMLButtonElement>(
+    ".color-button",
+  );
+  colorBtns.forEach((btn) => {
+    btn.classList.toggle(
+      "selectedTool",
+      btn.dataset.color === currentColor && currentTool === "marker",
+    );
+  });
+
   const nodes = stickerContainer.querySelectorAll<HTMLButtonElement>(
     ".sticker-button",
   );
@@ -348,6 +502,10 @@ function updateToolSelection() {
       currentTool === "sticker" && btn.dataset.emoji === selectedSticker,
     );
   });
+
+  // show rotation buttons as active when sticker tool selected
+  rotateLeftButton.classList.toggle("selectedTool", currentTool === "sticker");
+  rotateRightButton.classList.toggle("selectedTool", currentTool === "sticker");
 }
 updateToolSelection();
 
@@ -383,11 +541,19 @@ canvas.addEventListener("mousedown", (e) => {
 
   const pt: Point = { x: e.offsetX, y: e.offsetY };
 
+  // randomize variation at the moment the tool is used
+  randomizeVariation();
+
   if (currentTool === "marker") {
-    const line = new MarkerLine(pt, currentThickness);
+    const line = new MarkerLine(pt, currentThickness, currentColor);
     strokes.push(line);
   } else if (currentTool === "sticker" && selectedSticker) {
-    const sticker = new StickerCommand(pt, selectedSticker, 36);
+    const sticker = new StickerCommand(
+      pt,
+      selectedSticker,
+      36,
+      currentStickerRotation,
+    );
     strokes.push(sticker);
   }
 
@@ -418,9 +584,15 @@ canvas.addEventListener("mousemove", (e) => {
   cursor.y = y;
 
   if (currentTool === "marker") {
-    currentPreview = new CirclePreview(x, y, currentThickness);
+    currentPreview = new CirclePreview(x, y, currentThickness, currentColor);
   } else if (currentTool === "sticker" && selectedSticker) {
-    currentPreview = new StickerPreview(x, y, selectedSticker, 36);
+    currentPreview = new StickerPreview(
+      x,
+      y,
+      selectedSticker,
+      36,
+      currentStickerRotation,
+    );
   } else {
     currentPreview = null;
   }
@@ -432,13 +604,19 @@ canvas.addEventListener("mouseup", (_e) => {
   cursor.active = false;
   // show a preview at the last cursor position immediately after finishing a stroke
   if (currentTool === "marker") {
-    currentPreview = new CirclePreview(cursor.x, cursor.y, currentThickness);
+    currentPreview = new CirclePreview(
+      cursor.x,
+      cursor.y,
+      currentThickness,
+      currentColor,
+    );
   } else if (currentTool === "sticker" && selectedSticker) {
     currentPreview = new StickerPreview(
       cursor.x,
       cursor.y,
       selectedSticker,
       36,
+      currentStickerRotation,
     );
   } else {
     currentPreview = null;
@@ -497,7 +675,6 @@ exportButton.addEventListener("click", () => {
   // copy rendering defaults used by main canvas
   out.lineCap = "round";
   out.lineJoin = "round";
-  out.strokeStyle = "#000";
 
   // draw all commands (do not draw tool preview)
   for (const cmd of strokes) {
