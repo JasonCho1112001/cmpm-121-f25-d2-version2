@@ -14,25 +14,107 @@
   background-color: white;
 }
 
-/* row that holds the canvas and the control(s) beside it */
+/* Layout */
 .canvas-row {
   display: flex;
+  gap: 18px;
   align-items: flex-start;
-  gap: 12px;
-  justify-content: center; /* center the whole group */
-  margin-top: 20px;
+  justify-content: center;
+  padding: 18px;
 }
 
-.clear-button {
-  padding: 8px 12px;
-  font-size: 14px;
+/* Canvas styling */
+.app-canvas {
+  border: 1px solid #ddd;
+  background: #fff;
+  width: 256px;
+  height: 256px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
   border-radius: 6px;
-  border: 1px solid #bbb;
-  background: #f6f6f6;
-  cursor: pointer;
-  height: fit-content;
 }
 
-.clear-button:hover {
-  background: #eee;
+/* Controls panel */
+.controls {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+/* Group styling */
+.group h3 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  font-weight: 700; /* bold */
+  color: #222;
+}
+
+.btn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Buttons */
+.tool-button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background: linear-gradient(#fafafa, #f2f2f2);
+  cursor: pointer;
+  font-size: 15px;
+  color: #111;
+  text-align: center;
+  transition: background 120ms ease, box-shadow 120ms ease, transform 80ms ease;
+}
+
+.tool-button:hover {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.tool-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Sticker buttons larger emoji */
+.sticker-button {
+  font-size: 20px;
+  padding: 6px 8px;
+}
+
+/* Selected state */
+.tool-button.selectedTool {
+  background: linear-gradient(#2b6ef6, #1f56d6);
+  color: #fff;
+  border-color: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 6px 18px rgba(31, 86, 214, 0.18);
+}
+
+/* Actions list makes buttons full width and left-aligned */
+.actions-list .tool-button {
+  width: 100%;
+  text-align: left;
+  padding-left: 12px;
+}
+
+/* Export button styling (stand out) */
+.export-button {
+  background: linear-gradient(#10b981, #0ea36f);
+  color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+}
+
+/* Small responsive tweak */
+@media (max-width: 640px) {
+  .canvas-row {
+    flex-direction: column;
+    align-items: center;
+  }
+  .controls {
+    width: auto;
+  }
 }

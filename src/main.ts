@@ -164,11 +164,7 @@ let currentThickness = 2;
 // Selected sticker emoji when using sticker tool
 let selectedSticker: string | null = null;
 
-// Tool buttons
-const toolsRow = document.createElement("div");
-toolsRow.className = "tools-row";
-canvasRow.appendChild(toolsRow);
-
+// --- Create all buttons first (declared before grouping) ---
 const thinButton = document.createElement("button");
 thinButton.type = "button";
 thinButton.className = "tool-button";
@@ -179,27 +175,39 @@ thickButton.type = "button";
 thickButton.className = "tool-button";
 thickButton.textContent = "Thick";
 
-toolsRow.appendChild(thinButton);
-toolsRow.appendChild(thickButton);
-
-// Sticker list (data-driven)
-const stickers: string[] = ["🍙", "🥟", "🍜"];
-
-// container for sticker buttons
 const stickerContainer = document.createElement("div");
 stickerContainer.className = "sticker-container";
-toolsRow.appendChild(stickerContainer);
 
-// Custom sticker button
 const customButton = document.createElement("button");
 customButton.type = "button";
 customButton.className = "tool-button custom-button";
 customButton.textContent = "Custom…";
-toolsRow.appendChild(customButton);
+
+const undoButton = document.createElement("button");
+undoButton.type = "button";
+undoButton.className = "tool-button undo-button";
+undoButton.textContent = "Undo";
+
+const redoButton = document.createElement("button");
+redoButton.type = "button";
+redoButton.className = "tool-button redo-button";
+redoButton.textContent = "Redo";
+
+const clearButton = document.createElement("button");
+clearButton.type = "button";
+clearButton.className = "tool-button clear-button";
+clearButton.textContent = "Clear";
+
+const exportButton = document.createElement("button");
+exportButton.type = "button";
+exportButton.className = "tool-button export-button";
+exportButton.textContent = "Export (1024×1024)";
+
+// Sticker list (data-driven)
+const stickers: string[] = ["🍙", "🥟", "🍜"];
 
 // Render sticker buttons from the stickers array
 function renderStickerButtons() {
-  // clear existing buttons
   stickerContainer.innerHTML = "";
   for (const emoji of stickers) {
     const b = document.createElement("button");
@@ -222,15 +230,14 @@ function renderStickerButtons() {
     stickerContainer.appendChild(b);
   }
 }
+renderStickerButtons();
 
+// Custom sticker handler
 customButton.addEventListener("click", () => {
-  // ask user for custom sticker (emoji or text)
   const text = prompt("Custom sticker text", "🧽");
   if (text && text.trim() !== "") {
-    // add to stickers list and re-render buttons
     stickers.push(text);
     renderStickerButtons();
-    // select the newly created sticker
     currentTool = "sticker";
     selectedSticker = text;
     currentPreview = new StickerPreview(
@@ -243,33 +250,6 @@ customButton.addEventListener("click", () => {
     canvas.dispatchEvent(new Event("tool-moved"));
   }
 });
-
-// Simple visual feedback for selected tool
-function updateToolSelection() {
-  thinButton.classList.toggle(
-    "selectedTool",
-    currentTool === "marker" && currentThickness === 2,
-  );
-  // thick brush is now twice as thick (4)
-  thickButton.classList.toggle(
-    "selectedTool",
-    currentTool === "marker" && currentThickness === 4,
-  );
-
-  // toggle sticker buttons
-  const nodes = stickerContainer.querySelectorAll<HTMLButtonElement>(
-    ".sticker-button",
-  );
-  nodes.forEach((btn) => {
-    btn.classList.toggle(
-      "selectedTool",
-      currentTool === "sticker" && btn.dataset.emoji === selectedSticker,
-    );
-  });
-
-  // custom button isn't a sticker itself, keep it unselected
-}
-renderStickerButtons();
 
 // ensure thin/thick buttons restore the marker tool and set thickness
 thinButton.addEventListener("click", () => {
@@ -290,6 +270,86 @@ thickButton.addEventListener("click", () => {
   updateToolSelection();
   canvas.dispatchEvent(new Event("tool-moved"));
 });
+
+// --- Build controls panel (uses the already-declared buttons) ---
+const controls = document.createElement("div");
+controls.className = "controls";
+canvasRow.appendChild(controls);
+
+// Brushes group
+const brushesGroup = document.createElement("div");
+brushesGroup.className = "group brushes";
+const brushesTitle = document.createElement("h3");
+brushesTitle.textContent = "Brushes";
+brushesGroup.appendChild(brushesTitle);
+const brushesList = document.createElement("div");
+brushesList.className = "btn-list";
+brushesList.appendChild(thinButton);
+brushesList.appendChild(thickButton);
+brushesGroup.appendChild(brushesList);
+controls.appendChild(brushesGroup);
+
+// Stickers group
+const stickersGroup = document.createElement("div");
+stickersGroup.className = "group stickers";
+const stickersTitle = document.createElement("h3");
+stickersTitle.textContent = "Stickers";
+stickersGroup.appendChild(stickersTitle);
+const stickersList = document.createElement("div");
+stickersList.className = "btn-list sticker-list";
+stickersList.appendChild(stickerContainer);
+stickersGroup.appendChild(stickersList);
+const customWrapper = document.createElement("div");
+customWrapper.className = "btn-list";
+customWrapper.appendChild(customButton);
+stickersGroup.appendChild(customWrapper);
+controls.appendChild(stickersGroup);
+
+// Actions group
+const actionsGroup = document.createElement("div");
+actionsGroup.className = "group actions";
+const actionsTitle = document.createElement("h3");
+actionsTitle.textContent = "Actions";
+actionsGroup.appendChild(actionsTitle);
+const actionsList = document.createElement("div");
+actionsList.className = "btn-list actions-list";
+actionsList.appendChild(undoButton);
+actionsList.appendChild(redoButton);
+actionsList.appendChild(clearButton);
+actionsGroup.appendChild(actionsList);
+controls.appendChild(actionsGroup);
+
+// Export group
+const exportGroup = document.createElement("div");
+exportGroup.className = "group export-group";
+const exportList = document.createElement("div");
+exportList.className = "btn-list";
+exportList.appendChild(exportButton);
+exportGroup.appendChild(exportList);
+controls.appendChild(exportGroup);
+
+// Reusable selection updater
+function updateToolSelection() {
+  thinButton.classList.toggle(
+    "selectedTool",
+    currentTool === "marker" && currentThickness === 2,
+  );
+  thickButton.classList.toggle(
+    "selectedTool",
+    currentTool === "marker" && currentThickness === 4,
+  );
+
+  const nodes = stickerContainer.querySelectorAll<HTMLButtonElement>(
+    ".sticker-button",
+  );
+  nodes.forEach((btn) => {
+    btn.classList.toggle(
+      "selectedTool",
+      currentTool === "sticker" && btn.dataset.emoji === selectedSticker,
+    );
+  });
+}
+updateToolSelection();
 
 // Redraw observer: clears canvas and redraws all commands + preview when appropriate
 canvas.addEventListener("drawing-changed", () => {
@@ -391,32 +451,6 @@ canvas.addEventListener("mouseleave", () => {
   currentPreview = null;
   canvas.dispatchEvent(new Event("tool-moved"));
 });
-
-const clearButton = document.createElement("button");
-clearButton.type = "button";
-clearButton.className = "clear-button";
-clearButton.textContent = "Clear";
-// Add the clear button next to the canvas inside the same row
-canvasRow.appendChild(clearButton);
-
-const undoButton = document.createElement("button");
-undoButton.type = "button";
-undoButton.className = "undo-button";
-undoButton.textContent = "Undo";
-canvasRow.appendChild(undoButton);
-
-const redoButton = document.createElement("button");
-redoButton.type = "button";
-redoButton.className = "redo-button";
-redoButton.textContent = "Redo";
-canvasRow.appendChild(redoButton);
-
-// Export button (high-res PNG)
-const exportButton = document.createElement("button");
-exportButton.type = "button";
-exportButton.className = "export-button";
-exportButton.textContent = "Export (1024×1024)";
-canvasRow.appendChild(exportButton);
 
 clearButton.addEventListener("click", () => {
   strokes.length = 0;
