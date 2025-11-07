@@ -411,6 +411,13 @@ redoButton.className = "redo-button";
 redoButton.textContent = "Redo";
 canvasRow.appendChild(redoButton);
 
+// Export button (high-res PNG)
+const exportButton = document.createElement("button");
+exportButton.type = "button";
+exportButton.className = "export-button";
+exportButton.textContent = "Export (1024×1024)";
+canvasRow.appendChild(exportButton);
+
 clearButton.addEventListener("click", () => {
   strokes.length = 0;
   redoStack.length = 0;
@@ -433,4 +440,50 @@ redoButton.addEventListener("click", () => {
     strokes.push(restored);
     canvas.dispatchEvent(new Event("drawing-changed"));
   }
+});
+
+// Export handler: render display list into a temporary 1024x1024 canvas (scaled) and download as PNG
+exportButton.addEventListener("click", () => {
+  const exportSize = 1024;
+  const tmp = document.createElement("canvas");
+  tmp.width = exportSize;
+  tmp.height = exportSize;
+  const out = tmp.getContext("2d");
+  if (!out) {
+    // runtime guard (should not happen in normal browsers)
+    alert("Unable to create export canvas context");
+    return;
+  }
+
+  // scale so the current 256x256 drawing fills 1024x1024
+  const scale = exportSize / canvas.width;
+  out.save();
+  out.scale(scale, scale);
+
+  // copy rendering defaults used by main canvas
+  out.lineCap = "round";
+  out.lineJoin = "round";
+  out.strokeStyle = "#000";
+
+  // draw all commands (do not draw tool preview)
+  for (const cmd of strokes) {
+    cmd.display(out);
+  }
+  out.restore();
+
+  // toBlob preferred for large images
+  tmp.toBlob((blob) => {
+    if (!blob) {
+      alert("Export failed");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "drawing.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, "image/png");
 });
